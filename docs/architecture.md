@@ -202,10 +202,11 @@ Rules that keep it maintainable:
                             ▼
                 ┌──────────────────────────┐
                 │ GOOGLE DRIVE             │
-                │ "Household Budget" folder│  owned by Google Account 1,
-                │ (permanent source of     │  shared (writer) with
-                │  truth)                  │  Google Account 2
-                └──────────────────────────┘
+                │ "Household Budget" folder│  owned by Google Account 1
+                │ (permanent source of     │  = the ONLY account the app
+                │  truth)                  │  connects with. Shared by hand
+                └──────────────────────────┘  with Google Account 2 (Drive
+                                              access only, not via the app)
 ```
 
 Reading the diagram top to bottom:
@@ -262,7 +263,7 @@ A future backend (OneDrive, a NAS, a database) only needs to implement these.
 
 | Concept | Stored where | Used for | Ever stored in a record? |
 |---|---|---|---|
-| **Google Account** | Device token file (outside repo) | Authorising Drive access only | **No** (see open question Q7) |
+| **Google Account** | Device token file (outside repo) | Authorising Drive access only. **One account (the folder owner) for every computer**; Account 2 only gets the folder shared in Google Drive | **No** |
 | **Application User** (`user-01`, `user-02`) | `config/app-users.json` | "Filled By" / "Updated By" | Yes: `filledByUserId`, `createdBy`, `updatedBy` |
 | **Household Member** (Self, Spouse, Child 1 …) | `config/family-members.json` | "For whom" an expense/budget is | Yes: `memberId` (optional) |
 

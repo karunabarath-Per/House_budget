@@ -1,23 +1,73 @@
 # Google Drive Strategy and OAuth Flow
 
-> Status: **PROPOSAL — awaiting approval.** Contains a scope issue that
-> needs a decision before Phase 5: see "The `drive.file` problem" below and
-> [open-questions.md](open-questions.md) Q1.
+> Status: **PROPOSAL — awaiting approval.**
+> Decision recorded (2026-10-07): **the app connects to ONE Google account
+> only** (the folder owner). The owner shares the folder with the second
+> Google account manually in Google Drive; the app never uses the second
+> account.
 
-## Ownership model
+## Ownership and access model
 
 ```
-Google Account 1 ──owns──► "Household Budget" folder (My Drive, not a Shared Drive)
-                                │
-                                └── shared with Google Account 2 as "Editor" (writer)
+Google Account 1 (owner)
+   │
+   ├── owns "Household Budget" folder (My Drive, not a Shared Drive)
+   │
+   ├── is the ONLY account the app is authorised with
+   │      └── every computer running the app connects as Account 1
+   │
+   └── shares the folder with Google Account 2  (done by hand in Google Drive)
+              └── Account 2 can open the folder in Google Drive itself
+                  (view the files, download backups/exports).
+                  The app does NOT connect as Account 2.
 ```
 
-* Google accounts only **authorise Drive access**. They are not app users.
-* There is exactly **one** household dataset. Account 2 never creates a
-  second one; setup for Account 2 only *finds* and *verifies* the existing
-  folder.
-* The app only works inside this folder and files it created or the user
-  selected. It never browses or edits other Drive content.
+* The Google account only **authorises Drive access**. It is not an app user.
+  User 1 and User 2 both pick themselves in the app's user selector; who
+  filled each record is recorded as an **application user**, regardless of
+  which Google account is connected.
+* There is exactly **one** household dataset, created once by setup.
+* The app only works inside this folder, on files it created. It never
+  browses or edits other Drive content.
+
+### Why one account
+
+With the narrow `drive.file` permission, Google gives an app access only to
+files that the **same Google account** created with the app (or picked in
+Google Picker). If two different accounts each authorised the app, files
+created through one account would be invisible to the other, needing extra
+"grant access" steps and duplicate-file handling. With one connected
+account:
+
+* `drive.file` covers **every** file the app creates, on every computer.
+* No broader Drive scope is needed.
+* No Picker re-granting, no duplicate month files from invisible files.
+
+### Sharing with Account 2 — Viewer or Editor?
+
+This is set by the owner in Google Drive, not by the app.
+
+| Permission | Account 2 can… | Risk |
+|---|---|---|
+| **Viewer (recommended)** | open/download files and backups in Drive | none to app data |
+| Editor | also change, rename, delete or add files in the folder by hand | a hand-edited or deleted JSON file can break sync; files Account 2 *adds* are invisible to the app (`drive.file`) |
+
+The app is safe either way: it validates every file it reads and
+refuses to sync a corrupt file, and backups allow recovery. Editor is
+only needed if Account 2 must manage the files directly in Drive.
+
+### Consequences to be aware of
+
+* On a second computer, the person setting it up signs in to Google **as
+  Account 1** once during setup (Account 1's password or approval is needed
+  then). After that the computer keeps its own refresh token.
+* Drive's own "modified by" history will always show Account 1. Who entered
+  each record is visible in the app (`filledByUserId` / `updatedByUserId`).
+* Removing access: in Account 1's Google settings → Security → Third-party
+  access, remove "Household Budget" (disconnects all computers), or use
+  "Disconnect" inside the app on one computer.
+* Two computers using the same Google account can still edit at the same
+  time, so all conflict detection in [sync.md](sync.md) still applies.
 
 ## Folder / file layout
 
@@ -44,6 +94,8 @@ Household Budget/
 
 No other files are created. Files are found by the IDs recorded in
 `app-manifest.json`, not by name (Drive allows two files with the same name).
+Month files are created on demand; because every computer uses the same
+Google account, every computer sees them.
 
 ## OAuth flow (authorization code + PKCE)
 
@@ -56,9 +108,9 @@ Browser                    Local backend (127.0.0.1)              Google
    │                                │ (code_challenge = S256(verifier))
    │◄──── redirect to Google ───────│                                 │
    │──────────────────────────────────────────────────────────────────►│
-   │        consent screen: "Household Budget wants to see, edit,     │
-   │        create … only the specific Google Drive files you use     │
-   │        with this app"   (scope: drive.file)                      │
+   │        sign in as Google Account 1 (owner)                       │
+   │        consent: "see, edit, create … only the specific Google    │
+   │        Drive files you use with this app"   (scope: drive.file)  │
    │◄────── redirect to http://127.0.0.1:5173/oauth/callback?code&state
    │───────────────────────────────►│ check state                     │
    │                                │ exchange code + verifier ───────►│
@@ -70,112 +122,78 @@ Browser                    Local backend (127.0.0.1)              Google
 
 Details:
 
-* Google Cloud project with an OAuth client of type **Web application**,
-  redirect URI `http://127.0.0.1:5173/oauth/callback`. Client ID and secret go
-  in `.env` (never committed); `.env.example` has placeholders.
+* Google Cloud project (created under Account 1) with an OAuth client of
+  type **Web application**, redirect URI
+  `http://127.0.0.1:5173/oauth/callback`. Client ID and secret go in `.env`
+  (never committed); `.env.example` has placeholders.
 * Parameters: `response_type=code`, `code_challenge_method=S256`,
   `access_type=offline`, `scope=https://www.googleapis.com/auth/drive.file`,
   random `state` checked on return. No implicit flow.
 * Libraries: Google's official `google-auth-library` (it generates PKCE
   pairs). The Google Identity Services *browser* code-client is not used for
   the exchange because it does not let us supply a PKCE verifier; doing the
-  exchange on the local backend is the standard Google "web server" flow
-  with PKCE added.
-* **Google Picker** runs in the browser. It needs a short-lived access token,
-  which the backend hands to the localhost page on request (never the refresh
-  token), plus an API key restricted to `http://127.0.0.1:5173` and the
+  exchange on the local backend is Google's standard "web server" flow with
+  PKCE added.
+* **Account check:** after sign-in the backend reads the connected account's
+  Drive identity (`about.get` → user email, `drive.file` allows this). On
+  every computer after the first, it must match the owner recorded at setup;
+  otherwise: "This computer is signed in to a different Google account.
+  Connect with the Household Budget owner account." The email is stored only
+  in local `device.json` for this check and display, never in household
+  records.
+* **Google Picker** is only used if the owner wants to choose an existing
+  empty folder instead of letting the app create one. It needs a short-lived
+  access token (handed by the backend to the localhost page, never the
+  refresh token), an API key restricted to `http://127.0.0.1:5173`, and the
   Cloud project number as App ID.
-* "Disconnect Google Drive" revokes the token and deletes the token file.
-  Pending local changes are kept and the user is warned.
-* OAuth consent screen: "External", with the two Google accounts as test
-  users. `drive.file` is a **non-sensitive** scope, so the app can be moved
-  to "In production" status without Google's restricted-scope security
-  review. That matters: in "Testing" status Google expires refresh tokens
-  after 7 days, which would force both people to reconnect every week.
+* "Disconnect Google Drive" revokes this computer's token and deletes the
+  token file. Pending local changes are kept and the user is warned.
+* OAuth consent screen: "External", Account 1 as test user. `drive.file` is
+  a **non-sensitive** scope, so the app can be switched to "In production"
+  status without Google's restricted-scope security review. That matters:
+  in "Testing" status Google expires refresh tokens after 7 days, forcing a
+  reconnect every week.
 
-## The `drive.file` problem (needs your decision — Q1)
-
-`drive.file` gives the app access only to files that **this Google account**
-either created with the app or picked in Google Picker. Files are not
-shared between the two accounts' grants just because they sit in a shared
-folder.
-
-What that means here:
-
-| Situation | With `drive.file` |
-|---|---|
-| Account 1 creates the folder and files during setup | ✓ Account 1 can use them |
-| Account 2 picks the folder + all files in Picker during its setup | ✓ Account 2 can use those files |
-| Later, Account 1's app creates `transactions/2026-11.json` | ✗ **Account 2's app cannot see it** until Account 2 picks it in Picker |
-| Account 2's app cannot see it, so creates its own `2026-11.json` | ✗ two files with the same name → must be detected and merged |
-| Backups created by Account 1 | ✗ invisible to Account 2 until picked |
-
-I have not yet been able to test this with two real accounts; Phase 5
-starts with a small **two-account spike** to confirm the exact behaviour.
-
-Options:
-
-* **A (recommended): keep `drive.file`, design around it.**
-  * Setup creates all 12 transaction files of the year up front (and next
-    year's in December), so new months rarely need new files.
-  * The manifest lists every file ID. When a device finds a listed file it
-    cannot open, the status shows **"2 cloud files need your permission"**
-    and a button opens Picker at the Household Budget folder with
-    multi-select; the user selects all and confirms.
-  * Duplicate-name detection merges accidental duplicates.
-  * Cost: occasional extra Picker step for Account 2 (roughly once a year,
-    plus when restoring a backup made by the other account).
-* **B: request full Drive access** (`https://www.googleapis.com/auth/drive`).
-  Everything "just works", but the app could read/edit **every file** in both
-  Google Drives, and because it is a restricted scope the consent screen
-  would stay in "Testing" status → reconnect every 7 days (or go through
-  Google's paid security assessment).
-* **C: Account 2 does not authorise at all; both devices use Account 1.**
-  Contradicts the ownership model in the requirements. Not recommended.
-
-Per the requirements I have **not** chosen a broader scope.
-
-## First-time setup — Account 1 (owner)
+## First-time setup — first computer
 
 ```
 Cloud Storage Setup
-1. Connect Google Drive        → OAuth flow above
-2. Authorize application        → consent for drive.file
-3. Select Household Budget folder → "Create new folder" (app creates it,
-                                    so it has access) or Picker for an
-                                    existing EMPTY folder
-4. Verify access                → create/read/delete a probe file
-5. Initialize application files → sub-folders, seed config files,
-                                  manifest, current-year month files
-6. Confirm successful setup     → Cloud connected ✓  Folder found ✓
-                                  Files verified ✓
-Then: instructions to share the folder with Account 2 as Editor in
-Google Drive (done by the person in Drive, not by the app).
+1. Connect Google Drive          → OAuth flow above, signed in as Account 1
+2. Authorize application          → consent for drive.file
+3. Select Household Budget folder → "Create new folder" (recommended; the
+                                    app creates it, so it has access) or
+                                    Picker for an existing EMPTY folder
+4. Verify access                  → create / read / trash a probe file
+5. Initialize application files   → sub-folders, seed config files, manifest
+6. Confirm successful setup       → Cloud connected ✓  Folder found ✓
+                                    Files verified ✓
+Then: on-screen instructions for sharing the folder with Google Account 2
+in Google Drive (Share → add Account 2 → Viewer, or Editor if needed).
 ```
 
 If local data already exists (Phases 2–4), step 5 asks whether to upload it
 as the initial cloud data (with a local backup first).
 
-## First-time setup — Account 2
+## Setup — another computer (same household)
 
 ```
-1. Connect Google Drive
+1. Connect Google Drive          → sign in as Account 1 (owner)
 2. Authorize application
-3. Select the shared Household Budget folder (Picker → "Shared with me",
-   then multi-select all its files, Option A)
-4. Verify writer access   → read manifest, check householdId,
-                            check capabilities.canEdit on each file
-5. Load existing application data → download, validate, store as base
-                                    + working copy
+3. Find Household Budget folder  → the app looks up its own manifest
+                                    (files created by this app + account
+                                    are visible); no Picker needed
+4. Verify access                  → manifest householdId, read/write check
+5. Load existing application data → download, validate, store as base +
+                                    working copy
 6. Cloud connected ✓  Folder found ✓  Files verified ✓
 ```
 
-If the selected folder has no manifest, setup stops: "This is not a
-Household Budget folder. Ask the owner to share the correct folder." It
-never initialises a second dataset from Account 2.
+If more than one Household Budget manifest is found, the user picks one and
+the app shows each one's creation date and record counts. Setup on another
+computer never creates a second dataset.
 
 ## Configuration storage
 
-The chosen root folder ID, manifest file ID and connected-account email (for
-display only) are stored in the device's `device.json` in the OS app-data
-directory. Nothing Drive-specific is hard-coded.
+The root folder ID, manifest file ID and owner account email (for the
+account check) are stored in the device's `device.json` in the OS app-data
+directory. Nothing Drive-specific is hard-coded in source.

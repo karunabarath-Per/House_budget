@@ -31,7 +31,8 @@ Git by accident.
 HouseholdBudget/
 ├── device.json              deviceId, deviceName, selectedAppUserId,
 │                            cloud { provider, rootFolderId, manifestFileId,
-│                                    connectedAccountHint }
+│                                    ownerAccountEmail }  (used only to check every
+│                                    computer connects as the owner account)
 ├── secrets/
 │   └── google-token.json    refresh token (0600). Delete = disconnect.
 ├── staging/
@@ -79,7 +80,7 @@ HouseholdBudget/
 * Every write is validated against the schema first. Invalid data is
   rejected with a clear message.
 * Local changes are only cleared after the cloud upload is **verified**.
-* If the user tries to disconnect, switch Google account, or restore while
+* If the user tries to disconnect, reconnect Google Drive, or restore while
   there are pending changes, the app first writes them to
   `local-backups/` and asks for confirmation.
 

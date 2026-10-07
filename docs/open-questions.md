@@ -11,20 +11,15 @@ data), but please change it now: GitHub → repository **Settings → General �
 Danger Zone → Change visibility → Private**. Code will not be added until
 this is confirmed.
 
-## Q1. Google Drive scope and how Account 2 accesses files ⚠ (blocks Phase 5)
+## Q1. Google Drive scope — ✅ DECIDED (2026-10-07)
 
-**Why it matters:** with `drive.file`, Google Account 2's copy of the app
-cannot see files that Google Account 1's copy created later (for example a
-new month's file or a backup), even inside the shared folder. Details in
-[google-drive-setup.md](google-drive-setup.md#the-drivefile-problem-needs-your-decision--q1).
+The app connects to **one Google account only** (Account 1, the folder
+owner). The owner shares the folder with Account 2 by hand in Google Drive;
+the app never uses Account 2. Scope stays `drive.file` (narrowest). Details
+in [google-drive-setup.md](google-drive-setup.md).
 
-* **A (recommended):** keep `drive.file`. Pre-create the year's 12 month files;
-  when needed, show "N cloud files need your permission" → one Picker
-  multi-select. Verified with a two-account test at the start of Phase 5.
-* **B:** full Drive scope. Simpler, but the app can access all files in both
-  Drives, and you must reconnect every 7 days (unless you pay for Google's
-  security assessment).
-* **C:** only Account 1 ever authorises. Breaks the agreed ownership model.
+Small follow-up (recommendation, your choice in Drive): share with Account 2
+as **Viewer** unless Account 2 needs to edit files directly in Drive.
 
 ## Q2. Which devices, and do you need phone access?
 
@@ -81,16 +76,11 @@ Recommended (please confirm):
   income tracking. A refund is recorded later as a separate type (not now).
 * Alternative: allow negative amounts as refunds now.
 
-## Q7. Record the Google account on each transaction?
+## Q7. Record the Google account on each transaction? — ✅ resolved by Q1
 
-Your identity example lists "Google Account: Google Account 2" next to a
-transaction.
-
-* **Recommended:** do **not** store Google account emails in records (keeps
-  the three identities separate and avoids personal data in files). Drive's
-  own file history and the manifest's `lastSuccessfulSync` already show
-  which device/account uploaded.
-* Alternative: store an account label (not email) per transaction.
+Only one Google account is ever connected, so recording it per transaction
+would add no information. Records store the **application user**
+(`filledByUserId`, `updatedByUserId`) only.
 
 ## Q8. Confirm documented defaults
 
