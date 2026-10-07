@@ -3,6 +3,14 @@
 Only questions that change behaviour, money figures or data safety are listed.
 Each has a recommendation. Nothing below has been decided silently.
 
+## Q0. The GitHub repository is currently PUBLIC ⚠ (action needed)
+
+`karunabarath-Per/House_budget` is public, but the requirement is a
+**private** repository. It contains only documentation so far (no personal
+data), but please change it now: GitHub → repository **Settings → General →
+Danger Zone → Change visibility → Private**. Code will not be added until
+this is confirmed.
+
 ## Q1. Google Drive scope and how Account 2 accesses files ⚠ (blocks Phase 5)
 
 **Why it matters:** with `drive.file`, Google Account 2's copy of the app
